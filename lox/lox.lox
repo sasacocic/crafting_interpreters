@@ -1,0 +1,76 @@
+// this just prints hello world
+
+print "hello, world!"
+
+
+// Data types
+
+// Booleans
+
+true;
+false;
+
+// Numbers
+
+1234;
+12.34;
+
+// Strings
+
+"I am a string";
+"";
+"123";
+
+// Nil 
+
+nil;
+
+
+
+// Arithmetic
+
+1 + 2;
+1 - 2;
+1 * 2;
+1 / 2;
+-1; // negation
+
+
+// comparison
+
+1 < 2;
+1 <= 2;
+1 > 2;
+1 >= 2;
+
+1 == 2; // false
+"cat" != "dog"; // true
+
+
+314 == "pi"; // false
+123 == "123"; // false
+
+
+// logical operators
+
+
+!true;
+true and false; // false
+true and true; // true
+false or flase; // false
+true or flase; // true
+
+
+// precedence and grouping
+
+// variables
+
+var imAVar = "here is i";
+var iamNil;
+
+print imAVar;
+
+
+// control flow - if, while, for
+
+// casses - yes we have classes
