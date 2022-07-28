@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, fmt::Display, thread::panicking};
+use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(Debug)]
 pub enum TokenType {
@@ -57,6 +57,12 @@ use crate::LoxErrors;
 // honestly just using this as a placeholder for now
 #[derive(Debug)]
 pub struct Object(String);
+
+impl From<&str> for Object {
+    fn from(string: &str) -> Self {
+        Object(string.to_string())
+    }
+}
 
 #[derive(Debug)]
 pub struct Token {
@@ -118,17 +124,23 @@ impl Scanner {
         op
     }
 
-    fn add_token(&mut self, t: TokenType, literal: Option<Object>) {
+    fn add_token(&mut self, token_type: TokenType, literal: Option<Object>) {
         let text = self.source.get(self.start..self.current + 1);
         match text {
             Some(text) => self.tokens.push(Token {
                 lexeme: text.to_string(),
                 line: self.line,
                 literal,
-                token_type: t,
+                token_type,
             }),
             None => {
-                // throw an error, because I should be getting the string
+                panic!(
+                    r#"coudn't add token - error because I couldn't read the proper substring from:
+                    self.source.get(self.start..self.current+1) - self.start: {}, self.current+1{}"#,
+                    self.start,
+                    self.current + 1
+                );
+                // panic-ing right now. Should be throwing an error instead though.
             }
         }
     }
@@ -171,7 +183,7 @@ impl Scanner {
         self.advance();
 
         let value = self.source.get(self.start + 1..self.current - 1);
-        trace!("string read in string(): {:?}", value);
+        trace!("string read in 'string()': {:?}", value);
         self.add_token(
             TokenType::STRING,
             Some(Object(
@@ -271,75 +283,69 @@ impl Scanner {
             .advance()
             .ok_or("should be able to advance w/o any error")?;
         match c {
-            '(' => self.add_token(TokenType::LEFT_PAREN, None),
-            ')' => self.add_token(TokenType::RIGHT_PAREN, None),
-            '{' => self.add_token(TokenType::LEFT_BRACE, None),
-            '}' => self.add_token(TokenType::RIGHT_BRACE, None),
-            ',' => self.add_token(TokenType::COMMA, None),
-            '.' => self.add_token(TokenType::DOT, None),
-            '-' => self.add_token(TokenType::MINUS, None),
-            '+' => self.add_token(TokenType::PLUS, None),
-            ';' => self.add_token(TokenType::SEMICOLON, None),
-            '*' => self.add_token(TokenType::STAR, None),
+            '(' => self.add_token(TokenType::LEFT_PAREN, Some(Object("(".to_string()))),
+            ')' => self.add_token(TokenType::RIGHT_PAREN, Some(Object(")".to_string()))),
+            '{' => self.add_token(TokenType::LEFT_BRACE, Some(Object("{".to_string()))),
+            '}' => self.add_token(TokenType::RIGHT_BRACE, Some("}".into())),
+            ',' => self.add_token(TokenType::COMMA, Some(",".into())),
+            '.' => self.add_token(TokenType::DOT, Some(".".into())),
+            '-' => self.add_token(TokenType::MINUS, Some("-".into())),
+            '+' => self.add_token(TokenType::PLUS, Some("+".into())),
+            ';' => self.add_token(TokenType::SEMICOLON, Some(";".into())),
+            '*' => self.add_token(TokenType::STAR, Some("*".into())),
             '!' => {
                 let b = self.match_next("=");
-                self.add_token(
-                    if b {
-                        TokenType::BANG_EQUAL
-                    } else {
-                        TokenType::BANG
-                    },
-                    None,
-                )
+                let (tt, object) = if b {
+                    (TokenType::BANG_EQUAL, Some("!=".into()))
+                } else {
+                    (TokenType::BANG, Some("!".into()))
+                };
+                self.add_token(tt, object)
             }
             '=' => {
                 let b = self.match_next("=");
-                self.add_token(
-                    if b {
-                        TokenType::EQUAL_EQUAL
-                    } else {
-                        TokenType::EQUAL
-                    },
-                    None,
-                )
+                let (tt, object) = if b {
+                    (TokenType::EQUAL_EQUAL, Some("==".into()))
+                } else {
+                    (TokenType::EQUAL, Some("=".into()))
+                };
+                self.add_token(tt, object)
             }
             '<' => {
                 let b = self.match_next("=");
-                self.add_token(
-                    if b {
-                        TokenType::LESS_EQUAL
-                    } else {
-                        TokenType::LESS
-                    },
-                    None,
-                )
+                let (tt, object) = if b {
+                    (TokenType::LESS_EQUAL, Some("<=".into()))
+                } else {
+                    (TokenType::LESS, Some("<".into()))
+                };
+                self.add_token(tt, object);
             }
             '>' => {
                 let b = self.match_next("=");
-                self.add_token(
-                    if b {
-                        TokenType::GREATER_EQUAL
-                    } else {
-                        TokenType::GREATER
-                    },
-                    None,
-                )
+                let (tt, object) = if b {
+                    (TokenType::GREATER_EQUAL, Some(">=".into()))
+                } else {
+                    (TokenType::GREATER, Some("!".into()))
+                };
+                self.add_token(tt, object);
             }
             '/' => {
-                let b = self.match_next("/");
-                if b {
+                let matched = self.match_next("/");
+                if matched {
                     // it's a comment so just skip over the list
                     while self.peek() != Some('\n') && !self.is_at_end() {
                         self.advance();
                     }
                 } else {
-                    self.add_token(TokenType::SLASH, None);
+                    self.add_token(TokenType::SLASH, Some("/".into()));
                 };
             }
             ' ' | '\r' | '\t' => {
+                trace!("NOOP - '','\r' or '\t'");
                 // do nothing
             }
             '\n' => {
+                trace!("new line - incrementing parser.line: {}", self.line);
                 self.line += 1;
             }
             '"' => self.string(),
@@ -364,28 +370,33 @@ impl Scanner {
 
     // really this should return a result
     pub fn scan_tokens(&mut self) -> Result<&mut Vec<Token>, Vec<Box<dyn Error>>> {
-        /*
-        trying to do what. Collect the errors. Not sure how  */
         let mut errors: Vec<Box<dyn Error>> = Vec::new();
 
-        while self.is_at_end() {
+        while !self.is_at_end() {
             self.start = self.current;
             match self.scan_token() {
-                Ok(_) => {}
+                Ok(_) => {
+                    trace!("scan_token() was successful");
+                }
                 Err(error) => {
+                    trace!("error in scan_token(): {}", error);
                     errors.push(error);
                 }
             }
         }
 
-        self.tokens.push(Token {
-            token_type: TokenType::EOF,
-            lexeme: "".to_string(),
-            line: 0,
-            literal: None,
-        });
+        trace!("finnished scanning - now have tokens");
+
+        // I don't think I need this, but it could be some kind of terminator?..
+        // self.tokens.push(Token {
+        //     token_type: TokenType::EOF,
+        //     lexeme: "".to_string(),
+        //     line: 0,
+        //     literal: None,
+        // });
 
         if errors.is_empty() {
+            trace!("no errors - returning tokens");
             Ok(&mut self.tokens)
         } else {
             Err(errors)
