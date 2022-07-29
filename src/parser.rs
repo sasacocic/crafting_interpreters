@@ -1,12 +1,12 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     // Single-character tokens.
-    LEFT_PAREN,
-    RIGHT_PAREN,
-    LEFT_BRACE,
-    RIGHT_BRACE,
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
     COMMA,
     DOT,
     MINUS,
@@ -17,13 +17,13 @@ pub enum TokenType {
 
     // One or two character tokens.
     BANG,
-    BANG_EQUAL,
+    BangEqual,
     EQUAL,
-    EQUAL_EQUAL,
+    EqualEqual,
     GREATER,
-    GREATER_EQUAL,
+    GreaterEqual,
     LESS,
-    LESS_EQUAL,
+    LessEqual,
 
     // Literals.
     IDENTIFIER,
@@ -51,9 +51,8 @@ pub enum TokenType {
     EOF,
 }
 
-use log::trace;
-
 use crate::LoxErrors;
+use log::{debug, trace};
 // honestly just using this as a placeholder for now
 #[derive(Debug)]
 pub struct Object(String);
@@ -73,7 +72,7 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(
+    pub fn _new(
         token_type: TokenType,
         lexeme: String,
         literal: Option<Object>,
@@ -90,7 +89,20 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {} {}", &self.token_type, &self.lexeme, self.line)
+        if self.lexeme.ends_with("\n") {
+            write!(
+                f,
+                "_{:?}_{}_{}",
+                &self.token_type,
+                &self
+                    .lexeme
+                    .get(0..self.lexeme.len() - 1)
+                    .expect("unwrap lexeme without a newline"),
+                self.line
+            )
+        } else {
+            write!(f, "_{:?}_{}_{}", &self.token_type, &self.lexeme, self.line)
+        }
     }
 }
 
@@ -121,18 +133,30 @@ impl Scanner {
         // seems kinda crazy to always create this chars iterator, but whatever
         let op = self.source.chars().nth(self.current);
         self.current += 1;
+        trace!(
+            "scanner advanced to character: {:?}",
+            self.source.chars().nth(self.current)
+        );
         op
     }
 
     fn add_token(&mut self, token_type: TokenType, literal: Option<Object>) {
-        let text = self.source.get(self.start..self.current + 1);
+        let end = if self.start == self.current {
+            self.current + 1
+        } else {
+            self.current
+        };
+        let text = self.source.get(self.start..end);
         match text {
-            Some(text) => self.tokens.push(Token {
-                lexeme: text.to_string(),
-                line: self.line,
-                literal,
-                token_type,
-            }),
+            Some(text) => {
+                debug!("lexme being added to token: {}", text);
+                self.tokens.push(Token {
+                    lexeme: text.to_string(),
+                    line: self.line,
+                    literal,
+                    token_type,
+                })
+            }
             None => {
                 panic!(
                     r#"coudn't add token - error because I couldn't read the proper substring from:
@@ -149,7 +173,13 @@ impl Scanner {
         if self.is_at_end() {
             return false;
         }
-        if self.source.get(self.current..self.current + 1) != Some(expected) {
+        let substring_match = self.source.get(self.current..self.current + 1);
+        trace!(
+            "checking if {:?} != Some({:?})",
+            &substring_match,
+            Some(expected)
+        );
+        if substring_match != Some(expected) {
             return false;
         }
 
@@ -159,7 +189,7 @@ impl Scanner {
 
     fn peek(&self) -> Option<char> {
         if self.is_at_end() {
-            return Some('\0'); // what is \0 - null terminator?
+            return Some('\0'); // what is \0 - null terminator? end of file?
         }
         return self.source.chars().nth(self.current);
     }
@@ -169,8 +199,8 @@ impl Scanner {
         while self.peek() != Some('"') && !self.is_at_end() {
             if self.peek() == Some('\n') {
                 self.line += 1;
-                self.advance();
             }
+            self.advance();
         }
 
         if self.is_at_end() {
@@ -182,12 +212,12 @@ impl Scanner {
 
         self.advance();
 
-        let value = self.source.get(self.start + 1..self.current - 1);
-        trace!("string read in 'string()': {:?}", value);
+        let text = self.source.get(self.start + 1..self.current - 1);
+        trace!("string read in 'string()': {:?}", text);
         self.add_token(
             TokenType::STRING,
             Some(Object(
-                value.expect("string literal to have been read").to_string(),
+                text.expect("string literal to have been read").to_string(),
             )),
         )
     }
@@ -215,43 +245,34 @@ impl Scanner {
         if self.peek() == Some('.') && self.is_digit(self.peek_next()) {
             self.advance();
 
-            while (self.is_digit(self.peek().expect("peek to return a char"))) {
+            while self.is_digit(self.peek().expect("peek to return a char")) {
                 self.advance();
             }
         }
+
+        self.add_token(
+            TokenType::NUMBER,
+            self.source.get(self.start..self.current).map(|a| a.into()),
+        )
     }
 
     fn is_alpha(&self, c: char) -> bool {
         c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_'
     }
 
-    fn is_alphanumeric(&self, character: Option<char>) -> bool {
-        true
+    fn is_alphanumeric(&mut self, character: Option<char>) -> bool {
+        let character =
+            character.expect("character should be present if checking of an alphanumeric");
+        self.is_alpha(character) || self.is_digit(character)
     }
 
-    fn identifier(&mut self) {
+    fn identifier(&mut self) -> Result<(), Box<dyn Error>> {
+        trace!("found an identifier");
         while self.is_alphanumeric(self.peek()) {
             self.advance();
         }
 
         let mut keywords = HashMap::new();
-        //        keywords.insert("and".to_string(), TokenType::AND);
-        //        keywords.insert("class".to_string(), TokenType::CLASS);
-        //        keywords.insert("else".to_string(), TokenType::ELSE);
-        //        keywords.insert("flase".to_string(), TokenType::FALSE);
-        //        keywords.insert("for".to_string(), TokenType::FOR);
-        //        keywords.insert("fun".to_string(), TokenType::FUN);
-        //        keywords.insert("if".to_string(), TokenType::IF);
-        //        keywords.insert("nil".to_string(), TokenType::NIL);
-        //        keywords.insert("or".to_string(), TokenType::OR);
-        //        keywords.insert("print".to_string(), TokenType::PRINT);
-        //        keywords.insert("return".to_string(), TokenType::RETURN);
-        //        keywords.insert("super".to_string(), TokenType::SUPER);
-        //        keywords.insert("this".to_string(), TokenType::THIS);
-        //        keywords.insert("true".to_string(), TokenType::TRUE);
-        //        keywords.insert("var".to_string(), TokenType::VAR);
-        //        keywords.insert("while".to_string(), TokenType::WHILE);
-
         keywords.insert("and", TokenType::AND);
         keywords.insert("class", TokenType::CLASS);
         keywords.insert("else", TokenType::ELSE);
@@ -275,7 +296,17 @@ impl Scanner {
             .expect("couldn't get substring from source");
         let token_type = keywords.get(text);
 
-        self.add_token(TokenType::IDENTIFIER, None)
+        trace!("found identifier: {}", text);
+        match token_type {
+            None => {
+                self.add_token(TokenType::IDENTIFIER, Some(text.into()));
+            }
+            Some(token_type) => {
+                self.add_token(token_type.clone(), Some(text.into()));
+            }
+        }
+
+        Ok(())
     }
 
     fn scan_token(&mut self) -> Result<(), Box<dyn Error>> {
@@ -283,10 +314,10 @@ impl Scanner {
             .advance()
             .ok_or("should be able to advance w/o any error")?;
         match c {
-            '(' => self.add_token(TokenType::LEFT_PAREN, Some(Object("(".to_string()))),
-            ')' => self.add_token(TokenType::RIGHT_PAREN, Some(Object(")".to_string()))),
-            '{' => self.add_token(TokenType::LEFT_BRACE, Some(Object("{".to_string()))),
-            '}' => self.add_token(TokenType::RIGHT_BRACE, Some("}".into())),
+            '(' => self.add_token(TokenType::LeftParen, Some(Object("(".to_string()))),
+            ')' => self.add_token(TokenType::RightParen, Some(Object(")".to_string()))),
+            '{' => self.add_token(TokenType::LeftBrace, Some(Object("{".to_string()))),
+            '}' => self.add_token(TokenType::RightBrace, Some("}".into())),
             ',' => self.add_token(TokenType::COMMA, Some(",".into())),
             '.' => self.add_token(TokenType::DOT, Some(".".into())),
             '-' => self.add_token(TokenType::MINUS, Some("-".into())),
@@ -296,7 +327,7 @@ impl Scanner {
             '!' => {
                 let b = self.match_next("=");
                 let (tt, object) = if b {
-                    (TokenType::BANG_EQUAL, Some("!=".into()))
+                    (TokenType::BangEqual, Some("!=".into()))
                 } else {
                     (TokenType::BANG, Some("!".into()))
                 };
@@ -305,7 +336,7 @@ impl Scanner {
             '=' => {
                 let b = self.match_next("=");
                 let (tt, object) = if b {
-                    (TokenType::EQUAL_EQUAL, Some("==".into()))
+                    (TokenType::EqualEqual, Some("==".into()))
                 } else {
                     (TokenType::EQUAL, Some("=".into()))
                 };
@@ -314,7 +345,7 @@ impl Scanner {
             '<' => {
                 let b = self.match_next("=");
                 let (tt, object) = if b {
-                    (TokenType::LESS_EQUAL, Some("<=".into()))
+                    (TokenType::LessEqual, Some("<=".into()))
                 } else {
                     (TokenType::LESS, Some("<".into()))
                 };
@@ -323,7 +354,7 @@ impl Scanner {
             '>' => {
                 let b = self.match_next("=");
                 let (tt, object) = if b {
-                    (TokenType::GREATER_EQUAL, Some(">=".into()))
+                    (TokenType::GreaterEqual, Some(">=".into()))
                 } else {
                     (TokenType::GREATER, Some("!".into()))
                 };
@@ -341,19 +372,22 @@ impl Scanner {
                 };
             }
             ' ' | '\r' | '\t' => {
-                trace!("NOOP - '','\r' or '\t'");
+                trace!("NOOP - '','\\r' or '\\t'");
                 // do nothing
             }
             '\n' => {
-                trace!("new line - incrementing parser.line: {}", self.line);
                 self.line += 1;
+                trace!("new line - incrementing parser.line: {}", self.line);
             }
-            '"' => self.string(),
+            '"' => {
+                trace!("matched on self.string()");
+                self.string()
+            }
             _ => {
                 if self.is_digit(c) {
                     self.number();
                 } else if self.is_alpha(c) {
-                    self.identifier();
+                    self.identifier()?
                 } else {
                     // throw an error
                     eprintln!("couldn't find the lexeme you're tyring to do");
@@ -372,12 +406,12 @@ impl Scanner {
     pub fn scan_tokens(&mut self) -> Result<&mut Vec<Token>, Vec<Box<dyn Error>>> {
         let mut errors: Vec<Box<dyn Error>> = Vec::new();
 
+        trace!("scan_tokens - beginning");
         while !self.is_at_end() {
+            trace!("is_at_end? {}", self.is_at_end());
             self.start = self.current;
             match self.scan_token() {
-                Ok(_) => {
-                    trace!("scan_token() was successful");
-                }
+                Ok(_) => {}
                 Err(error) => {
                     trace!("error in scan_token(): {}", error);
                     errors.push(error);
@@ -385,15 +419,12 @@ impl Scanner {
             }
         }
 
-        trace!("finnished scanning - now have tokens");
-
-        // I don't think I need this, but it could be some kind of terminator?..
-        // self.tokens.push(Token {
-        //     token_type: TokenType::EOF,
-        //     lexeme: "".to_string(),
-        //     line: 0,
-        //     literal: None,
-        // });
+        self.tokens.push(Token {
+            token_type: TokenType::EOF,
+            lexeme: "".to_string(),
+            line: self.line,
+            literal: None,
+        });
 
         if errors.is_empty() {
             trace!("no errors - returning tokens");

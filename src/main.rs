@@ -49,12 +49,12 @@ fn run(raw_program: String) -> Result<(), Box<dyn Error>> {
     match scanning_result {
         Ok(tokens) => {
             for token in tokens {
-                info!("token: {}", token);
+                println!("token: {}", token);
             }
         }
         Err(errors) => {
             for error in errors {
-                eprintln!("{}", &*error);
+                eprintln!("ERROR: {}", &*error);
             }
         }
     }
@@ -68,7 +68,7 @@ fn run_file(file_name: String) -> Result<(), Box<dyn Error>> {
     trace!("file_path - running with {:?}", &file_path);
     let program = fs::read_to_string(file_path)?;
 
-    run(program);
+    run(program)?;
     Ok(())
 }
 
@@ -79,13 +79,10 @@ fn run_prompt() -> Result<(), Box<dyn Error>> {
         let mut read_input = String::new();
         stdin().read_line(&mut read_input)?; // I have no idea what happens when control-D (or EOF) is sent to this.... read the docs
         trace!("read from input: {:?}", &read_input);
-        let trimmed_input = read_input.trim();
-        if trimmed_input.is_empty() {
-            break;
-        }
-        match run(trimmed_input.to_string()) {
+        match run(read_input) {
             Ok(_) => {
                 // everything is ok no need to do anything
+                info!("prompt ran succesfully");
             }
             Err(error) => {
                 // this is a boxed error. I need to figure out the error, and
@@ -94,8 +91,6 @@ fn run_prompt() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-
-    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
