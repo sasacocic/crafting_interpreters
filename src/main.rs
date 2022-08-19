@@ -5,11 +5,15 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::{env, fs};
 
+use expr::{Binary, Expr, Grouping, Literal, Unary};
 use log::{info, trace};
 
+mod expr;
 mod parser;
 mod playground;
-use parser::Scanner;
+mod scripts;
+use parser::{Object, Scanner, Token};
+use playground::ASTPrinter;
 /*
 god damn it rust how the fuck should I actually return real errors
 */
@@ -93,21 +97,62 @@ fn run_prompt() -> Result<(), Box<dyn Error>> {
     }
 }
 
+fn see_tree() {
+    let expr = Binary::<String> {
+        left: Box::new(Unary {
+            operator: Token {
+                token_type: parser::TokenType::MINUS,
+                line: 1,
+                lexeme: "-".to_string(),
+                literal: None,
+            },
+            right: Box::new(Literal {
+                value: Object("123".to_string()),
+            }),
+        }),
+        operator: Token {
+            token_type: parser::TokenType::STAR,
+            literal: None,
+            lexeme: "*".to_string(),
+            line: 1,
+        },
+        right: Box::new(Grouping {
+            expression: Box::new(Literal {
+                value: Object("45.67".to_string()),
+            }),
+        }),
+    };
+
+    let ast_priter = ASTPrinter {};
+
+    println!("{}", ast_priter.print(Box::new(expr)));
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    see_tree();
+
     env_logger::init();
     trace!("starting program");
+
+    // I'll need to differenetiate between running lox, and running the helper script
 
     let mut args: Vec<String> = env::args().collect();
     if args.len() > 2 {
         println!("Usage: jilox [script]");
         exit(64); // I could also panic, but this isn't an unrecoverable error? Or is it?
     } else if args.len() == 2 {
-        // cloned, because I couldn't move the string out for whatever reason...
-        // honestly just wanted to
-        let file_name = args
-            .pop()
-            .ok_or("couldn't pop from args blah".to_string())?;
-        run_file(file_name)?
+        //let got = args.get(1);
+        //dbg!(&got);
+        if args.get(1) == Some(&"generate".to_string()) {
+            scripts::generate_exprs()?;
+        } else {
+            // cloned, because I couldn't move the string out for whatever reason...
+            // honestly just wanted to
+            let file_name = args
+                .pop()
+                .ok_or("couldn't pop from args blah".to_string())?;
+            run_file(file_name)?
+        }
     } else {
         run_prompt()?
     }

@@ -1,3 +1,5 @@
+use crate::LoxErrors;
+use log::{debug, trace};
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(Debug, Clone)]
@@ -51,11 +53,15 @@ pub enum TokenType {
     EOF,
 }
 
-use crate::LoxErrors;
-use log::{debug, trace};
 // honestly just using this as a placeholder for now
 #[derive(Debug)]
-pub struct Object(String);
+pub struct Object(pub String);
+
+impl ToString for Object {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
 
 impl From<&str> for Object {
     fn from(string: &str) -> Self {
